@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Wake up Codespace via GitHub API
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           REPO: ${{ github.repository }}
         run: |
           # 获取 Codespaces 列表
