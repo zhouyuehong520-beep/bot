@@ -12,55 +12,57 @@ jobs:
     name: Ping Codespace to prevent sleep
 
     steps:
-      - name: Wake up Codespace via GitHub API
+      - name: Wake up Codespace using GitHub CLI
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           set -e
           
-          echo "🔍 Checking active Codespaces..."
+          echo "🔍 Installing GitHub CLI..."
           
-          # 使用正确的 API 端点获取 Codespaces
-          response=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/user/codespaces)
-          
-          # 检查响应是否有效
-          if echo "$response" | grep -q '"message"'; then
-            echo "❌ Error: $(echo "$response" | jq -r '.message')"
-            echo "📋 Response: $response"
-            exit 1
+          # 安装 GitHub CLI（如果还没安装）
+          if ! command -v gh &> /dev/null; then
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt update
+            sudo apt install gh -y
           fi
           
-          # 检查是否有 Codespaces
-          codespace_count=$(echo "$response" | jq '. | length // 0')
-          echo "📊 Found $codespace_count Codespace(s)"
+          echo "🔍 Checking active Codespaces..."
           
-          if [ "$codespace_count" -eq 0 ]; then
+          # 使用 gh cli 列出 Codespaces
+          gh codespace list --limit 100 > /tmp/codespaces.txt
+          
+          # 检查是否有输出
+          if [ ! -s /tmp/codespaces.txt ]; then
             echo "✅ No active Codespaces found. Nothing to do."
             exit 0
           fi
           
-          # 显示 Codespaces 列表
-          echo "$response" | jq -r '.[] | "- \(.name) (\(.location))"'
+          echo "📊 Found Codespaces:"
+          cat /tmp/codespaces.txt
           
-          # 对每个 Codespace 发送请求以保持活跃
-          echo "$response" | jq -r '.[] | .name' | while read -r name; do
-            echo "📍 Pinging Codespace: $name"
+          # 获取第一个 Codespace 的名称
+          codespace_name=$(head -1 /tmp/codespaces.txt | awk '{print $1}')
+          
+          if [ -z "$codespace_name" ]; then
+            echo "❌ Could not find any Codespace"
+            exit 1
+          fi
+          
+          echo ""
+          echo "📍 Pinging Codespace: $codespace_name"
+          
+          # 尝试执行一个简单的命令来保持活跃
+          gh codespace ssh -c "$codespace_name" -- echo "Keep-alive ping: $(date -u)" || {
+            echo "⚠️  SSH failed, trying API instead..."
             
-            # 获取 Codespace 详情（保持它活跃）
-            ping_response=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              https://api.github.com/user/codespaces/$name)
-            
-            # 检查是否成功
-            if echo "$ping_response" | grep -q '"name"'; then
-              echo "   ✅ Successfully pinged"
-            else
-              echo "   ❌ Failed to ping"
-              echo "   Response: $ping_response"
-            fi
-          done
+            # 如果 SSH 失败，尝试通过 API 获取信息
+            gh api /user/codespaces/$codespace_name || {
+              echo "❌ Failed to reach Codespace"
+              exit 1
+            }
+          }
           
           echo ""
           echo "✨ Codespace keep-alive check completed successfully!"
