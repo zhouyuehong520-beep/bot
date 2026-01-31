@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: moltbot
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # 添加你的环境变量
+      # - key: BOT_TOKEN
+      #   value: your-telegram-bot-token
+      # - key: API_KEY
+      #   value: your-api-key
